@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  robot:
+    build: .
+    container_name: robot
+    hostname: robot
+    volumes:
+      - ./robot:/app
+    networks:
+      lab:
+        ipv4_address: 10.0.0.2
+
+  student:
+    build: .
+    container_name: student
+    hostname: student
+    volumes:
+      - ./student:/app
+    networks:
+      lab:
+        ipv4_address: 10.0.0.3
+
+networks:
+  lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24

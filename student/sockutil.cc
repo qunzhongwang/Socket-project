@@ -32,7 +32,7 @@ void logger(const char* level, const char* fmt, ...){
     }
     fprintf(stderr, "\n");
     va_end(args);
-    errno = saved_errno;
+    errno = 0;
 }
 
 

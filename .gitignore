@@ -2,3 +2,5 @@ build/
 # Project_Spec.pdf
 README.pdf
 .claude/
+throughput_results.csv
+core/

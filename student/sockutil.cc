@@ -1,10 +1,7 @@
 #include <cstring>
-#include <cstdarg>
-#include <iostream>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string>
 #include <unistd.h>
 #include <time.h>
 #include <errno.h>
@@ -15,37 +12,16 @@
 #include <netinet/in.h>
 
 
-/*
- * logger - variadic printf-style logging to stderr
- * only appends errno info for ERROR level — INFO/WARNING calls
- * could have stale errno from previous syscalls which is misleading
- */
-void logger(const char* level, const char* fmt, ...){
-    int saved_errno = errno;
-    va_list args;
-    va_start(args, fmt);
-    fprintf(stderr, "[%s] ", level);
-    vfprintf(stderr, fmt, args);
-    // only print errno for ERROR level
-    if (strcmp(level, ERROR) == 0 && saved_errno){
-        fprintf(stderr, ": %s", strerror(saved_errno));
-    }
-    fprintf(stderr, "\n");
-    va_end(args);
-    errno = 0;
-}
-
-
-// ---- CSAPP style — log and exit on error ----
+// ---- CSAPP-style error handling ----
 
 void unix_error(const char *msg)
 {
-    logger(ERROR, "%s", msg);
+    fprintf(stderr, "%s: %s\n", msg, strerror(errno));
     exit(1);
 }
 
 
-// ---- socket creation and connection wrappers ----
+// ---- Socket creation and connection wrappers ----
 
 int Socket(int domain, int type, int protocol)
 {
@@ -88,7 +64,7 @@ void Close(int fd)
 }
 
 
-// ---- socket option wrappers ----
+// ---- Socket option wrappers ----
 
 void Setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
 {
@@ -123,13 +99,12 @@ ssize_t Recv(int sockfd, void *buf, size_t len, int flags)
 }
 
 
-// ---- robust I/O helpers ----
 
-/*
- * Sock_write - robust write, loops until all n bytes are written
- * handles partial writes from kernel (TCP send buffer full, etc.)
- * returns n on success, -1 on error
- */
+
+// `Sock_write` is a robust write helper that loops until all `n` bytes are written.
+// It handles partial writes from the kernel, such as when the TCP send buffer is full.
+// Returns `n` on success and `-1` on error.
+
 int Sock_write(int fd, const char* buf, int n){
     int left_count = n;
     int rc = 0;
@@ -145,12 +120,11 @@ int Sock_write(int fd, const char* buf, int n){
     return n;
 }
 
-/*
- * Sock_read - robust read, loops until n bytes read or EOF
- * handles partial reads from kernel (TCP recv buffer, packet boundaries)
- * returns number of bytes actually read (may be < n on EOF)
- * returns -1 on error
- */
+// `Sock_read` is a robust read helper that loops until `n` bytes are read or EOF.
+// It handles partial reads from the kernel, such as TCP receive-buffer boundaries.
+// Returns the number of bytes actually read, which may be less than `n` on EOF.
+// Returns `-1` on error.
+
 int Sock_read(int fd, char* buf, int n){
     int left_count = n;
     int rc = 0;
@@ -167,4 +141,35 @@ int Sock_read(int fd, char* buf, int n){
         bufp += rc;
     }
     return (n - left_count);
+}
+
+// Export experiment results to a CSV file for plotting.
+void export_csv(exp_result results[], int n, const char* filename) {
+    FILE* fp = fopen(filename, "w");
+    if (!fp) {
+        fprintf(stderr, "Cannot open %s for writing: %s\n", filename, strerror(errno));
+        return;
+    }
+    fprintf(fp, "round,requested_buf,actual_buf,total_messages,total_bytes,duration_sec,throughput_bytes_per_sec\n");
+    for (int i = 0; i < n; i++) {
+        fprintf(fp, "%d,%d,%d,%lld,%lld,%.1f,%.2f\n",
+                i + 1, results[i].requested_buf, results[i].actual_buf,
+                results[i].total_messages, results[i].total_bytes,
+                results[i].duration_sec, results[i].throughput);
+    }
+    fclose(fp);
+    printf("Results exported to %s\n", filename);
+}
+
+const char* get_server_ipaddr()
+{
+    const char* remote_robot = getenv("REMOTE_ROBOT");
+    // Use the local ROBOT by default. Switch to the remote ROBOT for any
+    // non-empty value other than the explicit false-like values below.
+    if (remote_robot == NULL ||
+        strcmp(remote_robot, "false") == 0 ||
+        strcmp(remote_robot, "0") == 0) {
+        return LOCAL_SERVER_IPADDR;
+    }
+    return REMOTE_SERVER_IPADDR;
 }

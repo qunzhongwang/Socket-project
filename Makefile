@@ -1,8 +1,6 @@
 CXX = g++
-# CXXFLAGS = -Wall -std=c++11
 CXXFLAGS = -w -std=c++11
 BUILD_DIR = build
-
 
 all: $(BUILD_DIR) $(BUILD_DIR)/robot $(BUILD_DIR)/student
 

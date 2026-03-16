@@ -4,50 +4,43 @@ qunzhong@link.cuhk.edu.hk
 https://github.com/qunzhongwang
 */
 
-// self define module
+// Project headers
 #include "sockutil.h"
 
-// C std
+// C standard library headers
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
-#include <string>
-#include <sys/mman.h>
-#include <time.h>
 #include <errno.h>
-#include <cstring>
 
-
-
-// CXX std
-#include <iostream>
-
-// POSIX
+// POSIX headers
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-
 int main(){
+    const char* serverIpAddr = get_server_ipaddr();
+    printf("[Student: Setup] Using server IP %s (REMOTE_ROBOT=%s)\n",
+           serverIpAddr,
+           getenv("REMOTE_ROBOT") ? getenv("REMOTE_ROBOT") : "<unset>");
 
 	// --------------------------------------------------------------------- //
 	//								Step 1/2								 //
 	// --------------------------------------------------------------------- //
-	// Connect to ROBOT on TCP port 3310 and send 10-char student ID.
-	// ROBOT is already listening; we act as the TCP client here.
+	// Connect to the ROBOT on TCP port 3310 and send the 10-character student ID.
+    
 	int client_fd;
 
-    logger(INFO, "Student: Creating TCP socket as Client");
+    printf("[Student: Step 1] Creating TCP socket as Client\n");
 	client_fd = Socket(AF_INET, SOCK_STREAM, 0);
 
 	struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
-	inet_pton(AF_INET, SERVER_IPADDR, &server_addr.sin_addr);
+	inet_pton(AF_INET, serverIpAddr, &server_addr.sin_addr);
     server_addr.sin_port = htons(LISTEN_PORT);
 
 
@@ -57,40 +50,40 @@ int main(){
         (struct sockaddr*) &server_addr,
         sizeof(server_addr)
     );
-    logger(INFO, "Student: Connected to Robot on port %d", LISTEN_PORT);
+    printf("[Student: Step 2] Connected to Robot on port %d\n", LISTEN_PORT);
 
-    // send 10-char student ID to ROBOT
-    logger(INFO, "Student: Writing SID: %s", SID);
+    // Send the 10-character student ID to the ROBOT.
+    printf("[Student: Step 2] Writing SID: %s\n", SID);
     Sock_write(
         client_fd,
         SID,
         10
     );
-    logger(INFO, "Student: SID sent successfully");
+    printf("[Student: Step 2] SID sent successfully\n");
 
 	// --------------------------------------------------------------------- //
 	//								Step 3									 //
 	// --------------------------------------------------------------------- //
-	// ROBOT sends a 5-char port string "ddddd". We create a listening
-	// socket on that port and accept ROBOT's connection (~1s later).
-	// The accepted connection is conn_fd — this is STUDENT's "s2".
-    logger(INFO, "Student: Reading listen port from Robot");
+	// The ROBOT sends a 5-character port string, "ddddd". Create a listening
+	// socket on that port and accept the ROBOT's connection about 1 second later.
+
+    printf("[Student: Step 3] Reading listen port from Robot\n");
     Sock_read(
         client_fd,
         listenPortBuffer,
         5
     );
-    logger(INFO, "Student: Received listen port: %s", listenPortBuffer);
+    printf("[Student: Step 3] Received listen port: %s\n", listenPortBuffer);
 
 
     int listen_fd;
-    logger(INFO, "Student: Creating TCP listen socket on port %s", listenPortBuffer);
+    printf("[Student: Step 3] Creating TCP listen socket on port %s\n", listenPortBuffer);
 	listen_fd = Socket(AF_INET, SOCK_STREAM, 0);
 
 	struct sockaddr_in service;
     memset(&service, 0, (socklen_t) sizeof(service));
 	service.sin_family = AF_INET;
-	inet_pton(AF_INET, SERVER_IPADDR, &service.sin_addr);
+	service.sin_addr.s_addr = htonl(INADDR_ANY);
     service.sin_port = htons(atoi(listenPortBuffer));
 
     Bind(
@@ -99,7 +92,7 @@ int main(){
         (socklen_t) sizeof(service)
     );
     Listen(listen_fd, 1);
-    logger(INFO, "Student: Listening on port %s, waiting for Robot...", listenPortBuffer);
+    printf("[Student: Step 3] Listening on port %s, waiting for Robot...\n", listenPortBuffer);
 
     struct sockaddr_in client_addr;
     socklen_t addr_size = sizeof(client_addr);
@@ -110,37 +103,38 @@ int main(){
         (sockaddr*) &client_addr,
         &addr_size
     );
-    logger(INFO, "Student: Accepted connection from Robot on port %s", listenPortBuffer);
+    printf("[Student: Step 3] Accepted connection from Robot on port %s\n", listenPortBuffer);
 
 	// --------------------------------------------------------------------- //
 	//								Step 4									 //
 	// --------------------------------------------------------------------- //
-	// ROBOT sends 12-char string "fffff,eeeee." on conn_fd (s2).
-	// fffff = ROBOT's UDP port, eeeee = STUDENT's UDP port.
-	// We create a UDP socket s3, bind to eeeee, then:
-	//   - sendto num (5 < num < 10) to ROBOT on fffff
-	//   - recv num*10 char string from ROBOT on eeeee
-	// ROBOT sends the string 5 times; we only need to receive one.
+	// The ROBOT sends the 12-character string "fffff,eeeee." on `conn_fd` (s2).
+	// Here, `fffff` is the ROBOT's UDP port and `eeeee` is the STUDENT's UDP port.
+	// Create a UDP socket `s3`, bind it to `eeeee`, then:
+	// send `num` (where 5 < num < 10) to the ROBOT on `fffff`
+	// receive a `num * 10` character string from the ROBOT on `eeeee`
+
     char udpPortBuffer[13] = {'\0'};
     Sock_read(conn_fd, udpPortBuffer, 12);
-    logger(INFO, "Student: Received UDP port info: %s", udpPortBuffer);
+    printf("[Student: Step 4] Received UDP port info: %s\n", udpPortBuffer);
 
-    // parse "fffff,eeeee." — first 5 chars = robot UDP port, chars 6-10 = student UDP port
+    // Parse "fffff,eeeee.": the first 5 characters are the ROBOT UDP port,
+    // and characters 6-10 are the STUDENT UDP port.
     char robotUdpPortString[6] = {'\0'};
     for (int i = 0; i < 5; i++){
         robotUdpPortString[i] = udpPortBuffer[i];
     }
     int robotUdpPort = atoi(robotUdpPortString);
-    logger(INFO, "Student: Robot UDP port = %s (%d)", robotUdpPortString, robotUdpPort);
+    printf("[Student: Step 4] Robot UDP port = %s (%d)\n", robotUdpPortString, robotUdpPort);
 
     char studentUdpPortString[6] = {'\0'};
     for (int i = 0; i < 5; i++){
         studentUdpPortString[i] = udpPortBuffer[6+i];
     }
     int studentUdpPort = atoi(studentUdpPortString);
-    logger(INFO, "Student: Student UDP port = %s (%d)", studentUdpPortString, studentUdpPort);
+    printf("[Student: Step 4] Student UDP port = %s (%d)\n", studentUdpPortString, studentUdpPort);
 
-    // create UDP socket s3 and bind to student's UDP port
+    // Create UDP socket `s3` and bind it to the student's UDP port.
     int udp_fd;
 	udp_fd = Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
@@ -149,155 +143,227 @@ int main(){
 	studentAddr.sin_port = htons(studentUdpPort);
 	studentAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	Bind(udp_fd, (struct sockaddr *) &studentAddr, sizeof(studentAddr));
-    logger(INFO, "Student: UDP socket s3 bound to port %d", studentUdpPort);
+    printf("[Student: Step 4] UDP socket s3 bound to port %d\n", studentUdpPort);
 
-	// prepare robot's UDP address for sendto
+	// Prepare the ROBOT's UDP address for `sendto`.
 	struct sockaddr_in robotAddr;
 	robotAddr.sin_family = AF_INET;
 	robotAddr.sin_port = htons(robotUdpPort);
-	robotAddr.sin_addr.s_addr = inet_addr(SERVER_IPADDR);
+	robotAddr.sin_addr.s_addr = inet_addr(serverIpAddr);
 
-    // send num (5 < num < 10) to ROBOT on fffff
-    int num = 7;
+    // Send `num` (where 5 < num < 10) to the ROBOT on `fffff`.
+    int num = rand()%4 + 6;
     char numBuffer[2] = {'\0'};
     numBuffer[0] = num + '0';
-    logger(INFO, "Student: Sending num=%d to Robot UDP port %d", num, robotUdpPort);
+    printf("[Student: Step 4] Sending num=%d to Robot UDP port %d\n", num, robotUdpPort);
     Sendto(udp_fd, numBuffer, 1, 0, (struct sockaddr*)&robotAddr, sizeof(robotAddr));
-    logger(INFO, "Student: Sent num=%d successfully", num);
+    printf("[Student: Step 4] Sent num=%d successfully\n", num);
 
-    // receive num*10 char string from ROBOT (ROBOT sends 5 times, we only need one)
+    // Receive the `num * 10` character string from the ROBOT.
+    // The ROBOT sends it 5 times, but only one copy is needed.
     char stringBuffer[100] = {'\0'};
     Recv(udp_fd, stringBuffer, 100, 0);
-    logger(INFO, "Student: Received string (%d bytes): %s", (int)strlen(stringBuffer), stringBuffer);
+    printf("[Student: Step 4] Received string (%d bytes): %s\n", (int)strlen(stringBuffer), stringBuffer);
 
 	// --------------------------------------------------------------------- //
 	//								Step 5									 //
 	// --------------------------------------------------------------------- //
-	// Send the received string back to ROBOT at UDP port fffff,
-	// 5 times, once every 1 second. ROBOT checks if strings match.
-    logger(INFO, "Student: Echoing string back to Robot 5 times...");
+	// Send the received string back to the ROBOT at UDP port `fffff`
+	// 5 times, once per second. The ROBOT checks whether the strings match.
+
+    printf("[Student: Step 5] Echoing string back to Robot 5 times...\n");
     for (int i = 0; i < 5; i++){
         Sendto(udp_fd, stringBuffer, 10 * num, 0, (struct sockaddr*)&robotAddr, sizeof(robotAddr));
-        logger(INFO, "Student: UDP echo packet %d/5 sent", i+1);
+        printf("[Student: Step 5] UDP echo packet %d/5 sent\n", i+1);
         sleep(1);
     }
+
+    // --------------------------------------------------------------------- //
+	//								Step 6								 //
+	// --------------------------------------------------------------------- //
+    // Remote experiment.
+    // This step is covered by the runtime choice between
+    // `LOCAL_SERVER_IPADDR` and `REMOTE_SERVER_IPADDR`.
+    // If `REMOTE_SERVER_IPADDR` is selected, Steps 1-5 already run the Step 6 experiment.
+
+    
 
 	// --------------------------------------------------------------------- //
 	//								Step 7									 //
 	// --------------------------------------------------------------------- //
-	// Study the effect of receiver buffer size on TCP socket conn_fd (s2).
-	// 1. Get existing SO_RCVBUF of conn_fd and print it.
-	// 2. Send "bsXXX" to ROBOT on conn_fd so ROBOT knows the buffer size.
-	// 3. ROBOT will send messages for 30 seconds on s2.
-	// 4. Count and report received messages/bytes every 10 seconds.
+	// Study the effect of the receive buffer size on TCP socket `conn_fd` (s2).
+	// 1. Read and print the current `SO_RCVBUF` value of `conn_fd`.
+	// 2. Tell the ROBOT the agreed message size (1000 bytes) via "bsXXX".
+	// 3. The ROBOT sends 1000-byte messages on `s2` for 30 seconds.
+	// 4. Count complete messages and report every 10 seconds + final summary.
+
     int bufsize;
     socklen_t len = sizeof(bufsize);
     Getsockopt(conn_fd, SOL_SOCKET, SO_RCVBUF, &bufsize, &len);
-    logger(INFO, "Student: Current receive buffer size: %d bytes", bufsize);
+
+    // Send actual buffer size to ROBOT; ROBOT will cap message size at 1000.
+    // Both sides use 1000-byte messages so total_bytes / total_messages = 1000.
+    int msg_size = 1000;
 
     char bufSizeString[100] = {'\0'};
     snprintf(bufSizeString, 100, "bs%d", bufsize);
-    logger(INFO, "Student: Sending buffer size info to Robot: %s", bufSizeString);
     Sock_write(conn_fd, bufSizeString, strlen(bufSizeString));
 
-    // set receive timeout — after robot stops sending, recv returns EAGAIN
-    // instead of blocking forever. 2s is enough for robot to be well past done.
+    // Set a receive timeout so that `recv` returns `EAGAIN` after the ROBOT
+    // stops sending, instead of blocking forever. Two seconds is sufficient.
     struct timeval tv;
     tv.tv_sec = 2;
     tv.tv_usec = 0;
     Setsockopt(conn_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    logger(INFO, "Student: Receiving messages for 30 seconds...");
-    char messageBuffer[1024] = {'\0'};
-    int messageCnt = 0;
-    int bytesCnt = 0;
+    char* recvBuf = (char*)malloc(msg_size);
+
+    printf("============================================================\n");
+    printf("[Step 7] EXPERIMENT: Receiving messages from ROBOT for 30 seconds...\n");
+    printf("============================================================\n");
+
+    ll step7_totalMsgs = 0;
+    ll step7_totalBytes = 0;
     time_t start_t;
     time(&start_t);
     time_t curr_t;
-    time(&curr_t);
-    time_t end_t = start_t + 30;
+    int next_report = 10; // print stats every 10 seconds
 
-    // NOTE: raw recv (not Recv wrapper) because SO_RCVTIMEO causes
-    // recv to return -1 with EAGAIN on timeout — that's expected, not an error
-    while(curr_t < end_t){
+    while (1) {
         time(&curr_t);
-        int rc = recv(conn_fd, messageBuffer, 1024, 0);
-        if (rc > 0){
-            bytesCnt += rc;
-            messageCnt += 1;
+        double elapsed = difftime(curr_t, start_t);
+        if (elapsed >= 30) break;
+
+        // Print 10-second interval statistics.
+        if (elapsed >= next_report) {
+            printf("[%.1fs] Messages: %lld, Bytes: %lld, Throughput: %.2f KB/s\n",
+                   elapsed, step7_totalMsgs, step7_totalBytes,
+                   (double)step7_totalBytes / elapsed / 1024.0);
+            next_report += 10;
         }
-        if (curr_t - start_t > 10){
-            logger(INFO, "[Student] Number of received messages: %d, Number of received bytes: %d", messageCnt, bytesCnt);
-            messageCnt = 0; bytesCnt = 0;
-            start_t = curr_t;
+
+        // Robust recv: loop until exactly msg_size bytes are read (one message).
+        int nread = 0;
+        while (nread < msg_size) {
+            int rc = recv(conn_fd, recvBuf + nread, msg_size - nread, 0);
+            if (rc > 0) {
+                nread += rc;
+            } else {
+                break; // timeout or error
+            }
+        }
+        step7_totalBytes += nread;
+        if (nread == msg_size) {
+            step7_totalMsgs++;
+        } else {
+            break; // incomplete message — robot likely stopped
         }
     }
-    errno = 0; // clear stale EAGAIN/ETIMEDOUT from SO_RCVTIMEO
+    free(recvBuf);
+    errno = 0;
+
+    double step7_duration = 30.0;
+    double step7_throughput = (double)step7_totalBytes / step7_duration;
+    printf("\n============================================================\n");
+    printf("EXPERIMENT RESULTS\n");
+    printf("============================================================\n");
+    printf("[STUDENT] Receiver buffer size: %d bytes\n", bufsize);
+    printf("[STUDENT] Message size: %d bytes\n", bufsize);
+    printf("[STUDENT] Number of received messages: %lld\n", step7_totalMsgs);
+    printf("[STUDENT] Total received bytes: %lld\n", step7_totalBytes);
+    printf("[STUDENT] Duration: %.2f seconds\n", step7_duration);
+    printf("[STUDENT] Throughput: %.2f bytes/s (%.2f KB/s)\n",
+           step7_throughput, step7_throughput / 1024.0);
 
     // --------------------------------------------------------------------- //
     //                              Step 8                                   //
     // --------------------------------------------------------------------- //
-    // Repeat step 7 with different receive buffer sizes to measure throughput.
-    // For each size in [1,5,10,25,50,200,500,1000] * 1000 bytes:
-    //   1. setsockopt SO_RCVBUF to new size
-    //   2. send "bsXXX" to ROBOT so it knows the new buffer size
-    //   3. ROBOT sends messages for 30 seconds
-    //   4. count messages/bytes, print stats every 10 seconds
-    //   5. compute throughput = total_received_bytes / 30s
+    // Repeat Step 7 with different receive buffer sizes to measure throughput.
     int value_range[8] = {1,5,10,25,50,200,500,1000};
+    // Store the results for the Step 8 experiment rounds.
+    exp_result results[8];
 
     for (int i = 0; i < 8; i++){
-        int new_bufsize = value_range[i] * 1000;
+        
+        int new_bufsize = value_range[i] * 10;
         Setsockopt(conn_fd, SOL_SOCKET, SO_RCVBUF, &new_bufsize, sizeof(new_bufsize));
 
-        // kernel may double the value or clamp it — read back actual
+        // The kernel may double or clamp the requested value, so read back the actual size.
         int actual_bufsize;
         socklen_t optlen = sizeof(actual_bufsize);
         Getsockopt(conn_fd, SOL_SOCKET, SO_RCVBUF, &actual_bufsize, &optlen);
-        logger(INFO, "[Student] Round %d/8: requested buffer %d, actual: %d", i+1, new_bufsize, actual_bufsize);
+        printf("[Student: Step 8] Round %d/8: requested buffer %d, actual: %d\n", i+1, new_bufsize, actual_bufsize);
 
-        // inform ROBOT of new buffer size
+        // Inform the ROBOT of the new buffer size.
         char bufSizeString2[100] = {'\0'};
         snprintf(bufSizeString2, 100, "bs%d", actual_bufsize);
         Sock_write(conn_fd, bufSizeString2, strlen(bufSizeString2));
-        logger(INFO, "[Student] Sent buffer size info: %s, receiving for 30 seconds...", bufSizeString2);
 
-        memset(messageBuffer, 0, 1024);
-        int messageCnt2 = 0;
-        int bytesCnt2 = 0;
-        int totalBytes = 0;
+        // Each application-layer message is `actual_bufsize` bytes.
+        int msg_size8 = actual_bufsize;
+        char* recvBuf8 = (char*)malloc(msg_size8);
+        printf("[Student: Step 8] Receiving %d-byte messages for 30 seconds...\n", msg_size8);
+
+        ll totalMsgs = 0;
+        ll totalBytes = 0;
         time_t start_t2;
         time(&start_t2);
         time_t curr_t2;
-        time(&curr_t2);
-        time_t end_t2 = start_t2 + 30;
 
-        // raw recv — SO_RCVTIMEO returns EAGAIN on timeout, not a real error
-        while(curr_t2 < end_t2){
+        while (1) {
             time(&curr_t2);
-            int rc = recv(conn_fd, messageBuffer, 1024, 0);
-            if (rc > 0){
-                bytesCnt2 += rc;
-                totalBytes += rc;
-                messageCnt2 += 1;
+            if (curr_t2 - start_t2 >= 30) break;
+
+            // Robust recv: loop until exactly msg_size8 bytes are read.
+            int nread = 0;
+            while (nread < msg_size8) {
+                int rc = recv(conn_fd, recvBuf8 + nread, msg_size8 - nread, 0);
+                if (rc > 0) {
+                    nread += rc;
+                } else {
+                    break; // timeout or error
+                }
             }
-            if (curr_t2 - start_t2 > 10){
-                logger(INFO, "[Student] Number of received messages: %d, Number of received bytes: %d", messageCnt2, bytesCnt2);
-                messageCnt2 = 0; bytesCnt2 = 0;
-                start_t2 = curr_t2;
+            totalBytes += nread;
+            if (nread == msg_size8) {
+                totalMsgs++;
+            } else {
+                break; // incomplete message — robot likely stopped
             }
         }
+        free(recvBuf8);
 
-        errno = 0; // clear stale EAGAIN/ETIMEDOUT from SO_RCVTIMEO
+        errno = 0;
         double throughput = (double)totalBytes / 30.0;
-        logger(INFO, "[Student] Buffer size: %d, Throughput: %.2f bytes/sec", actual_bufsize, throughput);
+        printf("[Student: Step 8] Number of received messages: %lld, total received bytes: %lld\n",
+               totalMsgs, totalBytes);
+        printf("[Student: Step 8] Buffer size: %d, Throughput: %.2f bytes/sec\n",
+               actual_bufsize, throughput);
+
+        results[i].requested_buf  = new_bufsize;
+        results[i].actual_buf     = actual_bufsize;
+        results[i].total_messages = totalMsgs;
+        results[i].total_bytes    = totalBytes;
+        results[i].duration_sec   = 30.0;
+        results[i].throughput     = throughput;
+    }
+
+    // Export the summary results to a CSV file.
+    export_csv(results, 8, "throughput_results.csv");
+
+    // Drain conn_fd until the robot closes its end (or the existing 2s SO_RCVTIMEO
+    // fires), so the robot is never mid-send when we close — avoids SIGPIPE on robot.
+    {
+        char drain_buf[4096];
+        while (recv(conn_fd, drain_buf, sizeof(drain_buf), 0) > 0)
+            ;
     }
 
     Close(client_fd);
     Close(conn_fd);
     Close(listen_fd);
     Close(udp_fd);
-    logger(INFO, "Student: All sockets closed, exiting");
+    printf("Student: All sockets closed, exiting\n");
 
     return 0;
 }

@@ -4,6 +4,7 @@
  * Modified by Jonathan Liang
  */
 
+#include <cstring>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -250,6 +251,31 @@ int main(){
 		printf("\nThe two strings are the same.\n");
 	else
 		printf("\nThe two strings are not the same.\n");
+
+	
+	char bufSizeBuffer[100] = {'\0'};
+
+	recv(s2, bufSizeBuffer, 100, 0);
+	char baraBufSizeBuffer[100] = {'\0'};
+	size =  strlen(bufSizeBuffer);
+	for (int i = 2; i < size; i++){
+		baraBufSizeBuffer[i-2] = bufSizeBuffer[i];
+	}
+	char messageBuffer3[] = "hello world";
+	int buffsize = atoi(baraBufSizeBuffer);
+	for (int i = 0; i < buffsize; i++){
+		byte_left = strlen(messageBuffer3);
+
+		while (byte_left > 0){
+			iResult = send( s2, messageBuffer3-byte_left+(int)strlen(messageBuffer3), byte_left, 0 );
+	
+			if (iResult < 0) {
+				printf("send() failed with error\n");
+				return 1;
+			}
+			byte_left -= iResult;
+		}
+	}
 
 	close(s1);
 	close(s2);

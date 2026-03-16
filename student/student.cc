@@ -168,13 +168,19 @@ int main(){
 
     int bufsize;
     socklen_t len = sizeof(bufsize);
-    getsockopt(client_fd, SOL_SOCKET, SO_RCVBUF, &bufsize, &len);
+    getsockopt(conn_fd, SOL_SOCKET, SO_RCVBUF, &bufsize, &len);
     logger(INFO, "Receive buffer: %d bytes\n", bufsize);
 
     char bufSizeString[100] = {'\0'};
     snprintf(bufSizeString, 100, "bs%d", bufsize);
     
-    Sock_write(client_fd, bufSizeString, strlen(bufSizeString));
+    Sock_write(conn_fd, bufSizeString, strlen(bufSizeString));
+
+    // set receive timeout so recv doesn't block forever after robot stops sending
+    struct timeval tv;
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+    setsockopt(conn_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     char messageBuffer[1024] = {'\0'};
     int messageCnt = 0;
@@ -182,25 +188,74 @@ int main(){
     time_t start_t;
     time(&start_t);
     time_t curr_t;
-    time_t end_t = start_t + 30.;
+    time(&curr_t);
+    time_t end_t = start_t + 30;
 
     while(curr_t < end_t){
         time(&curr_t);
-        bytesCnt += Sock_read(client_fd, messageBuffer, 1024);
-        messageCnt += 1;
-        if (curr_t - start_t > 10.){
+        int rc = recv(conn_fd, messageBuffer, 1024, 0);
+        if (rc > 0){
+            bytesCnt += rc;
+            messageCnt += 1;
+        }
+        if (curr_t - start_t > 10){
             logger(INFO, "[Student] Number of received messages: %d, Number of received bytes: %d", messageCnt, bytesCnt);
             messageCnt = 0; bytesCnt = 0;
             start_t = curr_t;
         }
     }
 
+    // --------------------------------------------------------------------- //
+    //                              Step 8                                   //
+    // --------------------------------------------------------------------- //
     int value_range[8] = {1,5,10,25,50,200,500,1000};
 
     for (int i = 0; i < 8; i++){
-        int buffsize = value_range[i] * 1000;
+        int new_bufsize = value_range[i] * 1000;
+        setsockopt(conn_fd, SOL_SOCKET, SO_RCVBUF, &new_bufsize, sizeof(new_bufsize));
+
+        int actual_bufsize;
+        socklen_t optlen = sizeof(actual_bufsize);
+        getsockopt(conn_fd, SOL_SOCKET, SO_RCVBUF, &actual_bufsize, &optlen);
+        logger(INFO, "[Student] Set buffer size to %d, actual: %d", new_bufsize, actual_bufsize);
+
+        char bufSizeString2[100] = {'\0'};
+        snprintf(bufSizeString2, 100, "bs%d", actual_bufsize);
+        Sock_write(conn_fd, bufSizeString2, strlen(bufSizeString2));
+
+        memset(messageBuffer, 0, 1024);
+        int messageCnt2 = 0;
+        int bytesCnt2 = 0;
+        int totalBytes = 0;
+        time_t start_t2;
+        time(&start_t2);
+        time_t curr_t2;
+        time(&curr_t2);
+        time_t end_t2 = start_t2 + 30;
+
+        while(curr_t2 < end_t2){
+            time(&curr_t2);
+            int rc = recv(conn_fd, messageBuffer, 1024, 0);
+            if (rc > 0){
+                bytesCnt2 += rc;
+                totalBytes += rc;
+                messageCnt2 += 1;
+            }
+            if (curr_t2 - start_t2 > 10){
+                logger(INFO, "[Student] Number of received messages: %d, Number of received bytes: %d", messageCnt2, bytesCnt2);
+                messageCnt2 = 0; bytesCnt2 = 0;
+                start_t2 = curr_t2;
+            }
+        }
+
+        double throughput = (double)totalBytes / 30.0;
+        logger(INFO, "[Student] Buffer size: %d, Throughput: %.2f bytes/sec", actual_bufsize, throughput);
     }
 
+    close(client_fd);
+    close(conn_fd);
+    close(listen_fd);
+    close(udp_fd);
 
-
+    return 0;
 }

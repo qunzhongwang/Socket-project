@@ -263,17 +263,55 @@ int main(){
 	}
 	char messageBuffer3[] = "hello world";
 	int buffsize = atoi(baraBufSizeBuffer);
-	for (int i = 0; i < buffsize; i++){
-		byte_left = strlen(messageBuffer3);
+	printf("Student buffer size: %d, sending for 30 seconds...\n", buffsize);
 
+	time_t send_start = time(NULL);
+	time_t send_end = send_start + 30;
+	time_t send_curr = send_start;
+
+	while(send_curr < send_end){
+		time(&send_curr);
+		byte_left = strlen(messageBuffer3);
 		while (byte_left > 0){
 			iResult = send( s2, messageBuffer3-byte_left+(int)strlen(messageBuffer3), byte_left, 0 );
-	
 			if (iResult < 0) {
 				printf("send() failed with error\n");
-				return 1;
+				break;
 			}
 			byte_left -= iResult;
+		}
+		if (iResult < 0) break;
+	}
+
+	// --------------------------------------------------------------------- //
+	//								Step 8									 //
+	// --------------------------------------------------------------------- //
+	for (int round = 0; round < 8; round++){
+		memset(bufSizeBuffer, 0, 100);
+		recv(s2, bufSizeBuffer, 100, 0);
+		memset(baraBufSizeBuffer, 0, 100);
+		size = strlen(bufSizeBuffer);
+		for (int i = 2; i < size; i++){
+			baraBufSizeBuffer[i-2] = bufSizeBuffer[i];
+		}
+		buffsize = atoi(baraBufSizeBuffer);
+		printf("Round %d: Student buffer size = %d, sending for 30 seconds...\n", round+1, buffsize);
+
+		send_start = time(NULL);
+		send_end = send_start + 30;
+		send_curr = send_start;
+		while(send_curr < send_end){
+			time(&send_curr);
+			byte_left = strlen(messageBuffer3);
+			while (byte_left > 0){
+				iResult = send( s2, messageBuffer3-byte_left+(int)strlen(messageBuffer3), byte_left, 0 );
+				if (iResult < 0) {
+					printf("send() failed with error\n");
+					break;
+				}
+				byte_left -= iResult;
+			}
+			if (iResult < 0) break;
 		}
 	}
 
